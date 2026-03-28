@@ -332,33 +332,31 @@ claude mcp add hpe-networking --transport http http://localhost:8000/mcp
 
 ## 9. Milestones and Phases
 
-### Phase 1 — Foundation (v0.1.0)
+### Phase 1+2 — Foundation + Write Safety (v0.2.0) — RELEASED
 
-- [ ] Project scaffolding (Python + FastMCP + uv + Docker)
-- [ ] Secrets management (`secrets.json` loading, validation, per-platform enablement)
-- [ ] Streamable HTTP transport on port 8000
-- [ ] Mist module: Migrate all read tools with `mist_*` prefix
-- [ ] Central module: Migrate all read tools with `central_*` prefix
-- [ ] GreenLake module: Migrate all tools with `greenlake_*` prefix
-- [ ] Docker build (multi-stage, non-root user, health check)
-- [ ] Docker Compose with secrets bind mount
-- [ ] Basic README and setup documentation
+- [x] Project scaffolding (Python + FastMCP + uv + Docker)
+- [x] Docker Compose secrets (per-credential files at `/run/secrets/`)
+- [x] Streamable HTTP transport on port 8000
+- [x] Mist module: 29 read tools + 4 write tools with `mist_*` prefix
+- [x] Central module: 10 read tools + 11 guided prompts with `central_*` prefix
+- [x] GreenLake module: 10 static tools with `greenlake_*` prefix
+- [x] Docker build (multi-stage, non-root user, health check)
+- [x] Docker Compose with secrets
+- [x] Elicitation middleware (write tool confirmation)
+- [x] `ENABLE_WRITE_TOOLS` / `DISABLE_ELICITATION` flags
+- [x] Tool annotations on all tools
+- [x] README, PRD, PRP documentation
+- [x] GitHub repo: https://github.com/nowireless4u/hpe-networking-mcp
 
-### Phase 2 — Write Safety (v0.2.0)
+### Phase 3 — Testing & CI/CD (v0.3.0)
 
-- [ ] Elicitation middleware (write tool confirmation)
-- [ ] Mist write tools (configuration object CRUD)
-- [ ] `ENABLE_WRITE_TOOLS` / `DISABLE_ELICITATION` flags
-- [ ] Tool annotations on all tools
-- [ ] Pre-commit hooks (gitleaks, detect-secrets, ruff, mypy)
-
-### Phase 3 — Prompts and Polish (v0.3.0)
-
-- [ ] Central guided prompts (10 troubleshooting workflows)
-- [ ] GreenLake static tool mode
-- [ ] Comprehensive logging and error handling
-- [ ] Integration tests per platform
-- [ ] CI/CD pipeline (GitHub Actions)
+- [ ] Unit tests (config, middleware, platform clients)
+- [ ] Integration tests (server startup, tool execution, write visibility)
+- [ ] CI/CD pipeline (GitHub Actions: lint, test, security, Docker build)
+- [ ] Pre-commit hooks (ruff, mypy, gitleaks, bandit)
+- [ ] GreenLake dynamic meta-tools (list_endpoints, get_schema, invoke_endpoint)
+- [ ] `MCP_TOOL_MODE` setting (static vs dynamic)
+- [ ] `CONTRIBUTING.md` and `CHANGELOG.md`
 
 ### Phase 4 — Production Readiness (v1.0.0)
 
@@ -368,6 +366,7 @@ claude mcp add hpe-networking --transport http http://localhost:8000/mcp
 - [ ] Documentation: full tool reference, troubleshooting guide
 - [ ] Published Docker image (GitHub Container Registry or Docker Hub)
 - [ ] Release automation (semantic versioning, changelog)
+- [ ] Client integration testing (Claude Desktop, VS Code, GitHub Copilot)
 
 ---
 
