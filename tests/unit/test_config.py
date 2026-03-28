@@ -14,7 +14,6 @@ from hpe_networking_mcp.config import (
     load_config,
 )
 
-
 # ---------------------------------------------------------------------------
 # _read_secret
 # ---------------------------------------------------------------------------
@@ -195,8 +194,6 @@ class TestEnabledPlatforms:
         config = ServerConfig(
             mist=MistSecrets(api_token="t", host="h"),
             central=CentralSecrets(base_url="u", client_id="c", client_secret="s"),
-            greenlake=GreenLakeSecrets(
-                api_base_url="u", client_id="c", client_secret="s", workspace_id="w"
-            ),
+            greenlake=GreenLakeSecrets(api_base_url="u", client_id="c", client_secret="s", workspace_id="w"),
         )
         assert config.enabled_platforms == ["mist", "central", "greenlake"]

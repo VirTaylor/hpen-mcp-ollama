@@ -5,20 +5,21 @@ instance, registers platform tools based on config, and applies transforms.
 No real API calls are made -- platform registration functions are mocked.
 """
 
+from unittest.mock import patch
+
 import pytest
-from unittest.mock import patch, MagicMock
 
 from hpe_networking_mcp.config import (
-    ServerConfig,
-    MistSecrets,
     CentralSecrets,
     GreenLakeSecrets,
+    MistSecrets,
+    ServerConfig,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def mist_secrets() -> MistSecrets:
@@ -47,6 +48,7 @@ def greenlake_secrets() -> GreenLakeSecrets:
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.integration
 class TestCreateServer:
@@ -102,9 +104,7 @@ class TestCreateServer:
 
         mock_gl.assert_called_once()
 
-    def test_registers_all_platforms_when_all_configs_provided(
-        self, mist_secrets, central_secrets, greenlake_secrets
-    ):
+    def test_registers_all_platforms_when_all_configs_provided(self, mist_secrets, central_secrets, greenlake_secrets):
         """create_server() registers tools for all three platforms when all configs are present."""
         config = ServerConfig(
             mist=mist_secrets,
@@ -176,6 +176,5 @@ class TestCreateServer:
 
         visibility_found = any(isinstance(t, Visibility) for t in transforms)
         assert not visibility_found, (
-            f"Visibility transform should NOT be present when write tools are enabled. "
-            f"Found transforms: {transforms}"
+            f"Visibility transform should NOT be present when write tools are enabled. Found transforms: {transforms}"
         )

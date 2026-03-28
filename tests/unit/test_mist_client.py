@@ -1,11 +1,8 @@
 """Unit tests for hpe_networking_mcp.platforms.mist.client — response formatting."""
 
-from unittest.mock import MagicMock
-
 import pytest
 
 from hpe_networking_mcp.platforms.mist.client import _get_total, format_response_data
-
 
 # ---------------------------------------------------------------------------
 # Helper — mock APIResponse

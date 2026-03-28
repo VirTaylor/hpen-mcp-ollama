@@ -8,16 +8,16 @@ or network calls are involved.
 import pytest
 
 from hpe_networking_mcp.config import (
-    ServerConfig,
-    MistSecrets,
     CentralSecrets,
     GreenLakeSecrets,
+    MistSecrets,
+    ServerConfig,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _write_secret(secrets_dir, name: str, value: str) -> None:
     """Write a secret file into the temporary secrets directory."""
@@ -45,6 +45,7 @@ def _write_greenlake_secrets(secrets_dir) -> None:
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.integration
 class TestLoadConfig:

@@ -1,11 +1,10 @@
 """Unit tests for NullStripMiddleware and ElicitationMiddleware."""
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from hpe_networking_mcp.middleware.null_strip import NullStripMiddleware
-
 
 # ---------------------------------------------------------------------------
 # Helper to build a fake MiddlewareContext

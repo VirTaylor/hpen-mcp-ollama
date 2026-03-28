@@ -1,6 +1,6 @@
 """Unit tests for hpe_networking_mcp.platforms.central.utils — OData filter, time windows, helpers."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -10,7 +10,6 @@ from hpe_networking_mcp.platforms.central.utils import (
     build_odata_filter,
     compute_time_window,
 )
-
 
 # ---------------------------------------------------------------------------
 # build_odata_filter
@@ -99,7 +98,7 @@ class TestComputeTimeWindow:
 
     def test_today(self):
         start, end = compute_time_window("today")
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         assert start.hour == 0
         assert start.minute == 0
         assert start.second == 0
@@ -107,7 +106,7 @@ class TestComputeTimeWindow:
 
     def test_yesterday(self):
         start, end = compute_time_window("yesterday")
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         yesterday = now - timedelta(days=1)
         assert start.date() == yesterday.date()
         assert start.hour == 0

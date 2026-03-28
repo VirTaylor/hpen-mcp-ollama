@@ -1,7 +1,7 @@
 """Unit tests for hpe_networking_mcp.platforms.greenlake.auth — TokenInfo, TokenManager."""
 
 import time
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -11,7 +11,6 @@ from hpe_networking_mcp.platforms.greenlake.auth import (
     TokenInfo,
     TokenManager,
 )
-
 
 # ---------------------------------------------------------------------------
 # TokenInfo
