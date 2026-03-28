@@ -94,6 +94,7 @@ module = [
 ]
 ignore_missing_imports = true
 
+
 # Pytest configuration
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
@@ -106,4 +107,4 @@ testpaths = ["tests"]
 # Bandit configuration
 [tool.bandit]
 exclude_dirs = ["tests"]
-skips = ["B101", "B110"]  # B101: allow assert in tests, B110: allow try/except/pass in shutdown handlers
+skips = ["B101", "B104", "B110"]  # B101: assert, B104: 0.0.0.0 bind (Docker), B110: try/except/pass in shutdown

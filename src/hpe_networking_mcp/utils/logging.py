@@ -4,10 +4,16 @@ CRITICAL: MCP protocol requires stdout for JSON-RPC messages only.
 All diagnostic logs MUST go to stderr to avoid protocol corruption.
 """
 
+from __future__ import annotations
+
 import contextlib
 import sys
+from typing import TYPE_CHECKING
 
 from loguru import logger
+
+if TYPE_CHECKING:
+    from loguru import Record
 
 # Remove all default loguru handlers immediately
 logger.remove()
@@ -16,9 +22,10 @@ logger.remove()
 _NOISY_LIBS = frozenset(("httpx", "httpcore", "urllib3", "asyncio", "mistapi"))
 
 
-def _log_filter(record: dict) -> bool:
+def _log_filter(record: Record) -> bool:
     """Suppress DEBUG/INFO from noisy third-party libraries."""
-    if any(record["name"].startswith(lib) for lib in _NOISY_LIBS):
+    name = record["name"] or ""
+    if any(name.startswith(lib) for lib in _NOISY_LIBS):
         return record["level"].no >= 30  # WARNING and above only
     return True
 

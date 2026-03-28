@@ -11,7 +11,7 @@
 """
 
 from enum import Enum
-from typing import Annotated
+from typing import Annotated, Any
 from uuid import UUID
 
 import mistapi
@@ -1067,14 +1067,14 @@ async def _get_computed_device_config(
                 "message": ("Either device_id or device_data must be provided"),
             }
         )
-    data = {}
+    data: dict[str, Any] = {}
     if isinstance(device_data.data, dict):
         match device_data.data.get("type"):
             case "switch":
                 sw_name = device_data.data.get("name", "")
                 sw_model = device_data.data.get("model", "")
                 sw_role = device_data.data.get("role", "")
-                switch_data = {}
+                switch_data: dict[str, Any] = {}
                 site_config = mistapi.api.v1.sites.setting.getSiteSettingDerived(
                     apisession,
                     site_id=site_id,

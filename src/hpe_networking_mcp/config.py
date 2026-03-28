@@ -139,6 +139,9 @@ def _load_central() -> CentralSecrets | None:
         logger.info("Central: disabled (missing secrets: {})", ", ".join(missing))
         return None
 
+    assert base_url is not None
+    assert client_id is not None
+    assert client_secret is not None
     logger.info("Central: credentials loaded (base_url: {})", base_url)
     return CentralSecrets(
         base_url=base_url,
@@ -168,6 +171,10 @@ def _load_greenlake() -> GreenLakeSecrets | None:
         logger.info("GreenLake: disabled (missing secrets: {})", ", ".join(missing))
         return None
 
+    assert api_base_url is not None
+    assert client_id is not None
+    assert client_secret is not None
+    assert workspace_id is not None
     logger.info("GreenLake: credentials loaded (base_url: {})", api_base_url)
     return GreenLakeSecrets(
         api_base_url=api_base_url,

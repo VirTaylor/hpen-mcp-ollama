@@ -270,8 +270,8 @@ def transform_to_site_data(site_raw: dict) -> SiteData:
     lng = _safe_float(location.get("longitude"))
 
     return SiteData(
-        site_id=site_raw.get("id"),
-        name=site_raw.get("name"),
+        site_id=str(site_raw.get("id", "")),
+        name=str(site_raw.get("name", "")),
         address=site_raw.get("address", {}),
         location={"lat": lat, "lng": lng},
         metrics=metrics,
@@ -363,12 +363,12 @@ def clean_device_data(devices: list[dict]) -> list[Device]:
         if isinstance(device, dict):
             cleaned_devices.append(
                 Device(
-                    serial_number=device.get("serialNumber"),
-                    mac_address=device.get("macAddress"),
-                    device_type=device.get("deviceType"),
-                    model=device.get("model"),
-                    part_number=device.get("partNumber"),
-                    name=device.get("deviceName"),
+                    serial_number=str(device.get("serialNumber", "")),
+                    mac_address=str(device.get("macAddress", "")),
+                    device_type=str(device.get("deviceType", "")),
+                    model=str(device.get("model", "")),
+                    part_number=str(device.get("partNumber", "")),
+                    name=str(device.get("deviceName", "")),
                     function=device.get("deviceFunction"),
                     status=device.get("status"),
                     is_provisioned=(device.get("isProvisioned", "").lower() == "yes"),
@@ -472,10 +472,10 @@ def clean_alert_data(alerts: list[dict]) -> list[Alert]:
     for alert in alerts:
         cleaned_alerts.append(
             Alert(
-                summary=alert.get("summary"),
+                summary=str(alert.get("summary", "")),
                 cleared_reason=alert.get("clearedReason"),
-                created_at=alert.get("createdAt"),
-                priority=alert.get("priority"),
+                created_at=str(alert.get("createdAt", "")),
+                priority=str(alert.get("priority", "")),
                 updated_at=alert.get("updatedAt"),
                 device_type=alert.get("deviceType"),
                 updated_by=alert.get("updatedBy"),
