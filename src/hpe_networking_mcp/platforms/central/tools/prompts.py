@@ -225,3 +225,6 @@ note which level takes precedence (closest scope wins).
 7. Summarize: total effective resource count, how many are inherited vs \
 committed locally, and the inheritance depth.
         """.strip()
+
+    # Cross-platform WLAN sync prompts are registered in
+    # platforms/sync_prompts.py (shared between Mist and Central)

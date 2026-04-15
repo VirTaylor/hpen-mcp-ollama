@@ -55,6 +55,13 @@ TOOLS = {
         "central_get_devices_in_scope",
         "central_get_scope_diagram",
     ],
+    "aliases": ["central_get_aliases"],
+    "server_groups": ["central_get_server_groups"],
+    "named_vlans": ["central_get_named_vlans"],
+    "wlan_profiles": [
+        "central_get_wlan_profiles",
+        "central_manage_wlan_profile",
+    ],
     "configuration": [
         "central_manage_site",
         "central_manage_site_collection",
