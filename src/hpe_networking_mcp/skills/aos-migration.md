@@ -200,7 +200,17 @@ for scope in scopes:
             # Surface "Invalid Object" loudly — the AOS 8 REST schema may
             # drift between versions, and a silently-dropped object means
             # the migration plan is materially incomplete.
-            inner = response.get("result") if isinstance(response, dict) and "result" in response else response
+            #
+            # v3.0.0.0+: every tool response is wrapped in the envelope
+            # {ok, status, data, message, tool, platform}. The API payload
+            # lives at response["data"]. Some tools additionally wrap their
+            # return in {"result": ...} — handle both shapes via fallback.
+            envelope_data = response.get("data", response)
+            inner = (
+                envelope_data["result"]
+                if isinstance(envelope_data, dict) and "result" in envelope_data
+                else envelope_data
+            )
             if isinstance(inner, dict) and inner.get("ERROR") == "Invalid Object":
                 config_by_scope[scope][obj_type] = {
                     "_collection_error": f"Invalid Object — REST schema may have renamed {obj_type!r} on this AOS build"
@@ -243,7 +253,11 @@ clients = await call_tool("aos8_get_clients", {})
 bss_table = await call_tool("aos8_get_bss_table", {})
 active_aps = await call_tool("aos8_get_active_aps", {})
 
-ap_names = [ap["ap_name"] for ap in ap_database.get("AP Database", [])]
+# v3.0.0.0+: envelope unwrap, then handle the inner {"result": ...} wrapper
+# that some tools return (aos8_get_ap_database does).
+_envelope_data = ap_database.get("data", ap_database)
+_payload = _envelope_data.get("result", _envelope_data) if isinstance(_envelope_data, dict) else _envelope_data
+ap_names = [ap["ap_name"] for ap in _payload.get("AP Database", [])]
 ap_wired_ports = {}
 for ap_name in ap_names:
     ap_wired_ports[ap_name] = await call_tool(
