@@ -46,7 +46,7 @@ description: |
   process and partner-tool guidance.
 platforms: [central, aos8]
 tags: [central, migration, aos8, aos10, readiness, audit, vsg, translation]
-tools: [health, central_get_scope_tree, central_get_devices, central_get_aps, central_get_sites, central_get_site_name_id_mapping, central_recommend_firmware, central_get_config_assignments, central_get_server_groups, central_get_wlan_profiles, central_get_roles, central_get_role_acls, central_get_net_groups, central_get_net_services, central_get_named_vlans, central_get_aliases, central_manage_site, central_manage_site_collection, central_manage_device_group, central_manage_role, central_manage_role_acl, central_manage_net_group, central_manage_net_service, central_manage_wlan_profile, central_manage_config_assignment, clearpass_get_network_devices, clearpass_get_device_groups, clearpass_get_server_certificates, clearpass_get_local_users, greenlake_get_subscriptions, greenlake_get_workspace, greenlake_get_devices, aos8_get_md_hierarchy, aos8_get_effective_config, aos8_get_ap_database, aos8_get_cluster_state, aos8_show_command, aos8_get_clients, aos8_get_bss_table, aos8_get_active_aps, aos8_get_ap_wired_ports]
+tools: [health, central_get_scope_tree, central_get_devices, central_get_aps, central_get_sites, central_get_site_name_id_mapping, central_recommend_firmware, central_get_config_assignments, central_get_server_groups, central_get_wlan_profiles, central_get_roles, central_get_role_acls, central_get_net_groups, central_get_net_services, central_get_named_vlans, central_get_aliases, central_get_gateway_cluster_intent_profiles, central_get_gateway_clusters, central_manage_site, central_manage_site_collection, central_manage_device_group, central_manage_role, central_manage_role_acl, central_manage_net_group, central_manage_net_service, central_manage_wlan_profile, central_manage_config_assignment, central_manage_gateway_cluster_intent_profile, central_manage_gateway_cluster, clearpass_get_network_devices, clearpass_get_device_groups, clearpass_get_server_certificates, clearpass_get_local_users, greenlake_get_subscriptions, greenlake_get_workspace, greenlake_get_devices, aos8_get_md_hierarchy, aos8_get_effective_config, aos8_get_ap_database, aos8_get_cluster_state, aos8_show_command, aos8_get_clients, aos8_get_bss_table, aos8_get_active_aps, aos8_get_ap_wired_ports]
 ---
 
 # AOS 8 → AOS 10 migration (PoC) — readiness + config translation plan
@@ -83,7 +83,7 @@ The skill is NOT:
 
 - A **filter for "in use" config.** The customer's running config is the source of truth. Whether something is currently assigned, referenced, or actively serving traffic is **metadata** (`usage_state` column on disposition rows), not a basis for excluding it from the migration plan. Orphaned AAA server groups, unassigned captive portal profiles, AP system profiles configured but not bound to an AP group — all map and get translated.
 - A **legacy controller-plumbing validator.** Rules around LMS-IP, Backup-LMS-IP, AP Fast Failover that flag *"this internal AOS 8 controller-AP wiring is non-ideal"* do NOT fire as REGRESSION. AP-to-controller plumbing dissolves at migration — APs go to Central via TCP 443. These values still get **inventoried** so they can inform target HA mode recommendations, but they don't gate the verdict.
-- An **operator interview.** No Stage-0 questions. The skill detects AOS 8 reachability (Stage -1), walks the hierarchy (Stage 1), and derives every input it needs from the collected config — target SSID forwarding mode is auto-recommended from the source pattern, cluster topology comes from `aos8_get_cluster_state`, AirWave presence comes from config grep, L3 Mobility usage comes from effective-config. The operator can override any auto-derived value when reviewing the report.
+- An **operator interview.** No Stage-0 questions. The skill detects AOS 8 reachability (Stage -1), walks the hierarchy (Stage 1), and derives every input it needs from the collected config — target SSID forwarding mode is auto-recommended from the source pattern, cluster topology comes from `aos8_get_cluster_state`, AOS 10 cluster-mode (`CM_SITE` / `CM_MANUAL`) is derived from AP adoption + multizone signals (Stage 7 Step 4), AirWave presence comes from config grep, L3 Mobility usage comes from effective-config. The operator can override any auto-derived value when reviewing the report.
 - A **migration executor.** Never calls `central_manage_*` write tools. Plan only; Phase 3 (issue #240) is the execution capability.
 - A **rollback engine.** Rollback is captured as text in the cutover stage; not auto-generated as reversible API calls.
 - A **gap-filler for missing Central write tools.** Three known gaps (AAA RADIUS/TACACS server, AAA server-group, AP system profile) get `[Central API gap — manual UI action required]` placeholders. No invented tool names.
@@ -559,19 +559,63 @@ Out-of-scope personas (`ACCESS_SWITCH`, `AGG_SWITCH`, `CORE_SWITCH`, `BRIDGE`, `
 | Plural noun in node name (`Branch_Sites`, `Stores`, `Floors`) | Site Collection | medium | naming heuristic; operator confirms if children later contradict |
 | `_Static` suffix in name | Device Group | medium | naming heuristic for config-pinned device groupings |
 | Children include APs (CAMPUS_AP or MICROBRANCH_AP) | Site (auto-clustering re-enabled in AOS 10) | high | AP-bearing scopes always become Sites |
-| Persona token in name (`VPNC`, `BGW`, `Microbranch`) AND children uniformly that persona | persona-scope at parent (NO Device Group) UNLESS cluster_prof present at scope AND mode = manual → Device Group | medium | VPNC/BRANCH_GW never have APs, so persona-scope is the natural mapping |
-| Children uniformly MOBILITY_GW (no APs — DMZ pattern) AND cluster_prof present at scope | operator confirms cluster mode: auto-site → Site, manual → Device Group | medium | DMZ MGW cluster pattern |
+| Persona token in name (`VPNC`, `BGW`, `Microbranch`) AND children uniformly that persona | persona-scope at parent (NO Device Group) UNLESS cluster_prof present at scope AND derived mode = CM_MANUAL → Device Group | medium | VPNC/BRANCH_GW never have APs, so persona-scope is the natural mapping |
+| Children uniformly MOBILITY_GW (no APs — DMZ pattern) AND cluster_prof present at scope | derive cluster mode from AP-adoption + multizone signals (Step 4); CM_SITE → Site, CM_MANUAL → Device Group | medium | DMZ MGW cluster pattern |
 | Geographic / cardinal noun (`East`, `West`, `Dallas`, three-letter region codes) at leaf or near-leaf | Site | high | naming heuristic for true sites |
 | No matching signal | Device Group (default fallback) | low | operator review required |
 
-**Step 4 — Cluster mode disambiguation:**
+**Step 4 — Cluster mode derivation (data-driven, no operator-confirm):**
 
-When `cluster_prof` is defined at a scope, the **auto-site vs manual cluster mode determines whether the scope becomes a Site or a Device Group**:
+AOS 8 has no `cluster-mode` knob. The AOS 10 cluster-mode (`CM_SITE` / `CM_MANUAL`) is derived from three Stage 1 signals already in `config_by_scope`:
 
-- **Auto-site cluster** → Site. Central recreates the AOS 8 auto-site behavior under its native auto-clustering at the Site scope. No explicit Device Group needed.
-- **Manual cluster** → Device Group. Preserves the operator-chosen cluster-member boundary (typical for DMZ VPNCs and DMZ MGW clusters).
+1. `cluster_prof.cluster_controller[].ip` — cluster member IPs (from COLLECT-01)
+2. `ap_database.Switch IP` and `ap_database.Standby IP` — each AP's adoption controller (from COLLECT-02)
+3. `ap_multizone_prof.controller[].ip` — multizone tunnel anchor IPs per AP-group (from COLLECT-01)
 
-> **TBD — automated detection:** the field that distinguishes auto-site mode from manual mode in the `cluster_prof` schema has not yet been validated against a populated cluster. Until then, **operator confirms the cluster mode for every scope where `cluster_prof` is defined**. The draft mapping marks those rows `decide`. Automated detection is a planned enhancement.
+For each `cluster_prof` (skipping any cluster whose members include the conductor's IP — clusters are between MDs, not MM):
+
+```python
+member_ips = {c["ip"] for c in cluster_prof["cluster_controller"]}
+
+# Primary zone test
+primary_aps = [
+    ap for ap in ap_database
+    if ap.get("Switch IP") in member_ips
+       or ap.get("Standby IP") in member_ips
+]
+
+if primary_aps:
+    cluster.aos10_mode = "CM_SITE"
+    cluster.aos10_target = "Site"
+    cluster.notes = f"primary zone for {len(primary_aps)} APs"
+else:
+    cluster.aos10_mode = "CM_MANUAL"
+    cluster.aos10_target = "Device Group"
+    # Enrichment: distinguish multizone anchor from DMZ
+    multizone_for = [
+        ag["profile-name"] for ag in ap_groups_in_use
+        if ag.get("ap_multizone_prof", {}).get("profile-name")
+        and any(
+            c["ip"] in member_ips
+            for c in resolve_multizone_prof(ag["ap_multizone_prof"]["profile-name"]).get("controller", [])
+        )
+    ]
+    cluster.notes = (
+        f"tunnel anchor (multizone data zone) for AP-groups: {multizone_for}"
+        if multizone_for
+        else "active cluster with no APs adopted (DMZ pattern or unused)"
+    )
+
+cluster.aos10_scope = cluster.origin_scope  # /md/<region>/<site> per Stage 1 hierarchy walk
+```
+
+**Why this works:** AOS 8 multizone splits an AP's traffic across multiple controllers — the *primary zone* is the cluster the AP is adopted to (determined by `Switch IP` / `Standby IP`), and *data zones* are additional clusters acting as tunnel anchors for specific VAPs. AOS 10 represents primary zones as Sites with auto-clustering (`CM_SITE`); data-zone anchors and unused-active clusters become Device Groups (`CM_MANUAL`). The decision is binary and fully derivable.
+
+**External multizone targets** (a multizone profile references a controller IP that is NOT in any source `cluster_prof` AND NOT in the conductor's `aos8_get_controllers` list) emit a separate INFO finding in Stage 8:
+
+> *"AP-group `<X>` multizone profile `<Y>` references `<ip>` — not in any source `cluster_prof`, not managed by this conductor. External standalone controller; migrates to a single Central gateway, not a `gw-cluster`. Operator confirms placement."*
+
+Multizone targets that ARE managed by this conductor but aren't part of any cluster (a non-clustered MD) emit no finding — they translate normally as single Central gateways elsewhere in the disposition matrix.
 
 **Output:** the existing 3-column hierarchy table from the Stage 6 readiness report is **promoted to a 9-column translation table** that captures the inferred placement, persona, cluster signal, confidence, and target name:
 
@@ -580,8 +624,9 @@ When `cluster_prof` is defined at a scope, the **auto-site vs manual cluster mod
 | `<Mobility Conductor /md>` | `/md` | `drop` | (none) | n/a | n/a | n/a | high | Central org root is implicit |
 | `<region with child Groups>` | `/md/USE` | `direct-translate` | Site Collection | n/a (container) | n/a | `USE` | high | child Group nodes present |
 | `<plural-named region>` | `/md/Branch/Branch_Sites` | `direct-translate` | Site Collection | n/a (container) | n/a | `Branch_Sites` | medium | plural-noun naming heuristic |
-| `<site with APs>` | `/md/USE/dallas-hq` | `direct-translate` | Site | CAMPUS_AP | auto-site (re-enabled in AOS 10) | `dallas-hq` | high | AP children present |
-| `<DMZ MGW cluster, manual>` | `/md/DMZ` | `direct-translate` | Device Group | MOBILITY_GW | manual (operator-confirmed) | `DMZ-MGW-Cluster` | medium | cluster_prof present + operator-confirmed manual mode |
+| `<site with APs adopted to cluster X>` | `/md/USE/dallas-hq` | `direct-translate` | Site | CAMPUS_AP | CM_SITE (derived: primary zone for N APs) | `dallas-hq` | high | AP children + cluster_prof matched via Switch IP |
+| `<DMZ cluster — no APs adopted, multizone anchor>` | `/md/DMZ` | `direct-translate` | Device Group | MOBILITY_GW | CM_MANUAL (derived: multizone anchor for `<ap-group>`) | `DMZ-MGW-Cluster` | medium | cluster_prof present, no Switch IP match, multizone reference found |
+| `<active cluster — no APs, no multizone reference>` | `/md/StagingCluster` | `direct-translate` | Device Group | MOBILITY_GW | CM_MANUAL (derived: active cluster, no APs adopted, no multizone reference) | `Staging-MGW-Cluster` | medium | cluster_prof present, no APs, no multizone — DMZ or unused |
 | `<persona-named VPNC node>` | `/md/Branch/Branch_VPNC` | `transform (persona-scope)` | (none — persona at parent) | VPNC | n/a (no cluster_prof) | (no group; persona-scope at `/md/Branch`) | medium | VPNC token in name; no manual cluster — fold into parent persona scope |
 | `<_Static-suffix node>` | `/md/Branch/Branch_Sites_Static` | `direct-translate` | Device Group | MOBILITY_GW | n/a | `Branch_Sites_Static` | medium | `_Static` suffix → device group |
 | `<unsignaled node>` | `/md/Foo123` | `inconclusive — operator confirm` | Device Group (default) | n/a | n/a | (operator names) | low | no naming or structural signal — operator review required |
@@ -622,7 +667,7 @@ The VSG **does not** contain per-object translation tables for most object types
 | **VAP profile** (`virtual_ap`) | §2169-§2192 (Allowed bands "in the VAP", VLAN ID "in the VAP") | `transform` — AOS 8 VAP fields collapse INTO the WLAN profile in AOS 10; VAP is not a standalone object. Mark as `transform → folded into WLAN profile`. Target tool: `central_manage_wlan_profile` (collapsed). |
 | **MAC randomization handling** (per-SSID) | (none) | `operator-driven` — flag as a known AOS 10 behavioural difference. VSG does not address. Emit `OPERATOR-MAP`. |
 | **ARM / HT radio / Regulatory Domain profiles** (`arm_prof`, `ht_radio_prof`, `reg_domain_prof`) | §1163-§1166 | `deprecated` — ARM is replaced by **RF Profiles** in AOS 10 / Central. AirMatch already exists in AOS 8 and continues in Central — it is not the AOS 10 ARM replacement. The pre-AOS-8.4 band-split (`dot11a_radio_prof` / `dot11g_radio_prof`) was consolidated into `ht_radio_prof` upstream; the skill collects the single combined object. Already raised as DRIFT in Act I; emit one summary `drop` row per profile family in the matrix. |
-| **Cluster profile + group membership** (`cluster_prof`, `group_membership`) | (none — implied via cluster topology) | `transform` — cluster topology and member binding fold into Central HA mode + scope placement. Auto-site cluster → Site with auto-clustering re-enabled; manual cluster → Device Group with explicit member binding. See Stage 7 hierarchy translation for the placement rule. No standalone Central object — the cluster's behavior is recreated through the HA mode + scope. |
+| **Cluster profile + group membership** (`cluster_prof`, `group_membership`) | (none — implied via cluster topology) | `transform` — cluster topology and member binding fold into Central GCIS (`gw-cluster-intent` profile + realized `gw-cluster`). The AOS 10 cluster-mode (`CM_SITE` / `CM_MANUAL`) is **derived** by Stage 7 from AP-adoption + multizone signals — see Stage 7 Step 4. Each cluster_prof becomes a `gw-cluster` profile in Central with its `cluster_controller[].ip` translating to `ipv4-gateways[].mac` (gateways added by MAC; resolve IP→MAC via Central inventory). VRRP / heartbeat / multicast-VLAN fields map directly. Target tools: `central_manage_gateway_cluster_intent_profile` (intent — sets cluster-mode at scope, persona, multicast VLAN, etc.) + `central_manage_gateway_cluster` (realized profile with explicit member MACs). For CM_SITE clusters, GCIS auto-creates the realized profile (`auto_*` naming); operators only need the intent. For CM_MANUAL clusters, both calls are needed. |
 | **ClientMatch tunables** | §416-§418, §1167-§1169 | `deprecated` — *"Settings cannot be tuned."* Already raised as DRIFT in Act I; emit one summary `drop` row in the matrix. |
 
 #### 8.2 — Output: the disposition matrix
@@ -673,12 +718,13 @@ If a Stage 1 batch failed and an object class can't be enumerated, emit ONE row 
 For every row of the Stage 8 disposition matrix where Disposition is `direct-translate` or `transform` AND Central tool is **not** a `[Central API gap]`, compute a topological order respecting these dependency rules:
 
 1. **Hierarchy first.** `central_manage_site_collection` → `central_manage_site` → `central_manage_device_group`. All three must exist before any scoped object.
-2. **ACL primitives before role-acls.** `central_manage_net_group` and `central_manage_net_service` BEFORE `central_manage_role_acl` (role ACLs reference net-group / net-service aliases).
-3. **Role-acls before roles.** `central_manage_role_acl` BEFORE `central_manage_role` (a role's `access-list` field references role-acls by name).
-4. **Roles before WLAN profiles** when a WLAN profile references a default role.
-5. **WLAN profiles after roles + ACLs** but BEFORE `central_manage_config_assignment`.
-6. **`central_manage_config_assignment` last** — assigns the library objects to scopes (Site Collections / Sites / Device Groups). Without this step, objects exist in the Central library but aren't pushed to devices.
-7. **`[Central API gap]` rows** — emit as a placeholder step (`[manual UI step]`) at the position they would otherwise occupy in the dependency order. Subsequent steps that would reference the gap-filled object include the literal warning *"depends on prior manual UI step <step #> being completed."*
+2. **Cluster intent before realized clusters.** For each cluster_prof from Stage 7: emit `central_manage_gateway_cluster_intent_profile` (sets cluster-mode, persona, multicast VLAN, heartbeat at the appropriate scope). For CM_SITE clusters this is sufficient — Central GCIS auto-creates the realized `auto_*` cluster profile. For CM_MANUAL clusters, follow with `central_manage_gateway_cluster` to create the realized profile and add member gateways by MAC. Both must precede any object scoped to the cluster's gateways.
+3. **ACL primitives before role-acls.** `central_manage_net_group` and `central_manage_net_service` BEFORE `central_manage_role_acl` (role ACLs reference net-group / net-service aliases).
+4. **Role-acls before roles.** `central_manage_role_acl` BEFORE `central_manage_role` (a role's `access-list` field references role-acls by name).
+5. **Roles before WLAN profiles** when a WLAN profile references a default role.
+6. **WLAN profiles after roles + ACLs** but BEFORE `central_manage_config_assignment`.
+7. **`central_manage_config_assignment` last** — assigns the library objects to scopes (Site Collections / Sites / Device Groups). Without this step, objects exist in the Central library but aren't pushed to devices.
+8. **`[Central API gap]` rows** — emit as a placeholder step (`[manual UI step]`) at the position they would otherwise occupy in the dependency order. Subsequent steps that would reference the gap-filled object include the literal warning *"depends on prior manual UI step <step #> being completed."*
 
 **Output:** an ordered numbered list. One step per row of Stage 8 matrix where the row produces a Central API call (skip `drop` / `deprecated` / pure `operator-driven` rows that have no API target). Each step includes:
 
@@ -706,6 +752,8 @@ For every Stage 9 step that creates a Central object (i.e. excludes `[Central AP
 | `central_manage_site_collection` | `central_get_scope_tree` | name, parent_id (root) |
 | `central_manage_site` | `central_get_sites` (also `central_get_scope_tree`) | name, parent collection name |
 | `central_manage_device_group` | `central_get_scope_tree` | name, parent site name |
+| `central_manage_gateway_cluster_intent_profile` | `central_get_gateway_cluster_intent_profiles` | name, cluster-mode (CM_SITE / CM_MANUAL), device-type, multicast-vlan, heartbeat-threshold, scope binding |
+| `central_manage_gateway_cluster` | `central_get_gateway_clusters` | name, ipv4-gateways[].mac (member list), auto-cluster (false for manual), heartbeat-threshold |
 | `central_manage_role` | `central_get_roles` | name, vlan, access-list, captive-portal, session-timeout |
 | `central_manage_role_acl` | `central_get_role_acls` | name, rule list, ordering |
 | `central_manage_net_group` | `central_get_net_groups` | name, member list |
@@ -829,20 +877,20 @@ If you believe a different format would be more legible, the answer is no — th
 
 ### Suggested AOS 10 hierarchy mapping (operator-confirmable draft)
 
-The skill produces a draft inference per `/md/<path>` Group node using naming heuristics, structural signals, and Device-persona cross-reference (see Stage 7 rules). **Rows marked `medium` or `low` confidence — and any row where `cluster_prof` is defined at the scope — require operator confirmation before Stage 7 emits the final mapping.**
+The skill produces a draft inference per `/md/<path>` Group node using naming heuristics, structural signals, Device-persona cross-reference, and **data-driven cluster-mode derivation** (see Stage 7 rules). Rows marked `medium` or `low` confidence may need operator review for placement / target-name corrections, but cluster mode itself is auto-derived — the operator does not pick `CM_SITE` vs `CM_MANUAL`.
 
-| Source AOS node | Inferred placement | Inferred persona | Confidence | Cluster mode | Reason | Operator action |
+| Source AOS node | Inferred placement | Inferred persona | Confidence | Cluster mode (derived) | Reason | Operator action |
 |---|---|---|---|---|---|---|
 | `/md` | (none — root) | n/a | high | n/a | Conductor root, dropped | — |
-| `<row per Group node>` | Site Collection / Site / Device Group / persona-scope | MOBILITY_GW / VPNC / BRANCH_GW / MICROBRANCH_AP / CAMPUS_AP / n/a | high / medium / low | n/a / auto-site / manual / **decide** | <which rule fired — child Group nodes \| plural noun \| `_Static` \| persona token \| AP children \| geographic noun \| cluster_prof present \| no signal> | confirm \| decide \| — |
+| `<row per Group node>` | Site Collection / Site / Device Group / persona-scope | MOBILITY_GW / VPNC / BRANCH_GW / MICROBRANCH_AP / CAMPUS_AP / n/a | high / medium / low | n/a / **CM_SITE** / **CM_MANUAL** | <which rule fired — child Group nodes \| plural noun \| `_Static` \| persona token \| AP children \| geographic noun \| cluster_prof matched via Switch IP \| cluster_prof + multizone anchor \| cluster_prof + no APs \| no signal> | confirm placement / target name |
 
 **Persona key:**
 - `MOBILITY_GW` — WLAN gateway. Default for AOS 8 Mobility Controllers (MDs).
-- `VPNC` / `BRANCH_GW` — gateway-only personas; never have APs. Persona-scope at parent (no Device Group) unless manually clustered.
+- `VPNC` / `BRANCH_GW` — gateway-only personas; never have APs. Persona-scope at parent (no Device Group) unless cluster_prof at scope derives to CM_MANUAL.
 - `MICROBRANCH_AP` / `CAMPUS_AP` — wireless AP roles.
 - (out of scope) `ACCESS_SWITCH`, `AGG_SWITCH`, `CORE_SWITCH`, `BRIDGE`, `HYBRID_NAC` — flagged as wired/NAC migration not in this skill's scope; not translated.
 
-**Cluster mode column:** `auto-site` and `manual` are recorded only after operator confirmation. Until automated detection of the auto-site-vs-manual signal in `cluster_prof` is wired in (planned), the skill marks every cluster_prof-bearing scope as **`decide`** and surfaces a per-scope confirmation prompt before Stage 7. Auto-site clusters → Site (Central re-enables auto-clustering). Manual clusters → Device Group (preserves explicit member boundary).
+**Cluster mode column (auto-derived):** every row's cluster mode is computed by the Stage 7 algorithm from `ap_database.Switch IP` / `Standby IP` matching against `cluster_prof.cluster_controller[].ip`, with multizone enrichment from `ap_multizone_prof.controller[].ip`. **Operator does NOT pick the cluster mode** — it's a function of the source data. `CM_SITE` = primary zone (APs adopted to this cluster). `CM_MANUAL` = no APs adopted (multizone anchor or DMZ/unused). Operator only confirms the AOS 10 *target name* and overrides placement classification when the heuristic is wrong (e.g. plural-noun rule misfires).
 
 ### REGRESSION findings (must fix before migration)
 Findings only fire when their applicability gate is met (see Stage 3). Possible REGRESSIONs include:
@@ -883,6 +931,8 @@ Findings only fire when their applicability gate is met (see Stage 3). Possible 
 - **Active client baseline**: <N> total, breakdown per SSID — for post-cutover diff (or "live-state inconclusive — clusters offline at audit time").
 - **AP RF baseline**: channel, TX power, client count per AP — for post-cutover comparison.
 - **Cluster topology** (auto-detected): <L2 cluster / L3 cluster / standalone / offline> at scope <X> → recommended target HA mode <Y>.
+- **Cluster mode classification** (auto-derived per Stage 7 Step 4): <one bullet per source `cluster_prof`, e.g. "`<cluster-name>` at `<scope>` → CM_SITE (primary zone for N APs)" or "`<cluster-name>` at `<scope>` → CM_MANUAL (multizone anchor for AP-group `<X>`)" or "`<cluster-name>` at `<scope>` → CM_MANUAL (active cluster, no APs adopted)">.
+- **External multizone target**: AP-group `<X>` multizone profile `<Y>` references `<ip>` — not in any source `cluster_prof`, not managed by this conductor. External standalone controller; migrates to a single Central gateway, not a `gw-cluster`. Operator confirms placement. (One bullet per external IP; emit nothing when the multizone target is in `cluster_prof` member list or in the conductor's own `aos8_get_controllers` list.)
 - **Central name collisions** (translation enrichment): <N> collisions detected; full per-row detail appears in Act II disposition matrix.
 - **Central-recommended firmware** for the AP models in inventory: <model → version table>.
 
@@ -956,8 +1006,9 @@ Verdict: PARTIAL — <N> Stage-1 collection items were inconclusive. Translation
 |---|---|---|---|---|---|---|---|---|
 | <Mobility Conductor /md> | `/md` | drop | (none) | n/a | n/a | n/a | high | Central org root is implicit |
 | <region with child Groups> | `/md/<region>` | direct-translate | Site Collection | n/a (container) | n/a | <name> | high | child Group nodes present |
-| <site with APs> | `/md/<region>/<site>` | direct-translate | Site | CAMPUS_AP | auto-site | <name> | high | AP children + auto-site cluster |
-| <DMZ MGW cluster, manual> | `/md/<region>/<dmz-cluster>` | direct-translate | Device Group | MOBILITY_GW | manual (operator-confirmed) | <name> | medium | cluster_prof + operator-confirmed manual mode |
+| <site with APs adopted to cluster X> | `/md/<region>/<site>` | direct-translate | Site | CAMPUS_AP | CM_SITE (derived: primary zone for N APs) | <name> | high | cluster_prof.cluster_controller[].ip matched ap_database Switch IP |
+| <DMZ cluster — multizone anchor> | `/md/<region>/<dmz-cluster>` | direct-translate | Device Group | MOBILITY_GW | CM_MANUAL (derived: multizone anchor for `<ap-group>`) | <name> | medium | cluster_prof present, no Switch IP match, multizone reference found |
+| <active cluster — no APs, no multizone> | `/md/<region>/<unused-cluster>` | direct-translate | Device Group | MOBILITY_GW | CM_MANUAL (derived: no APs adopted, no multizone reference) | <name> | medium | cluster_prof present, no Switch IP match, no multizone — DMZ or unused |
 | <persona-named VPNC node> | `/md/<region>/<vpnc-node>` | transform (persona-scope) | (none — persona at parent) | VPNC | n/a (no cluster_prof) | (no group; persona-scope at `/md/<region>`) | medium | persona token in name; persona-scope at parent |
 | <ap-group / static device group> | `/md/<region>/<site>/<ap-group>` | direct-translate | Device Group | CAMPUS_AP | n/a | <name> | medium | per-function device grouping |
 | ... | ... | ... | ... | ... | ... | ... | ... | ... |
